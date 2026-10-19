@@ -1,0 +1,52 @@
+<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Live orthomosaic</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+ html,body{height:100%;margin:0;font:14px system-ui,sans-serif}
+ #map{position:absolute;inset:0 0 56px 0;background:#222}
+ #bar{position:absolute;bottom:0;left:0;right:0;height:56px;display:flex;background:#111}
+ #bar button{flex:1;border:0;border-top:3px solid transparent;background:none;color:#999;font-size:16px;cursor:pointer}
+ #bar button.on{color:#fff;background:#222;border-top-color:#4caf50}
+ .box{position:absolute;z-index:1000;background:#fffd;padding:4px 8px;border-radius:4px}
+ #info{top:8px;right:8px} #leg{bottom:66px;left:8px;display:none}
+ #grad{height:10px;width:160px;background:linear-gradient(90deg,#f00,#ff0,#0f0)}
+ #lab{display:flex;justify-content:space-between;font-size:12px}
+</style>
+<div id="map"></div>
+<div id="info" class="box">waiting for data…</div>
+<div id="leg" class="box"><div id="grad"></div><div id="lab"><span id="lo"></span><span id="hi"></span></div></div>
+<div id="bar"><button data-l="rgb" class="on">RGB</button><button data-l="ndvi">NDVI</button><button data-l="ndre">NDRE</button></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const map = L.map('map', {maxZoom: 22}).setView([0, 0], 2);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 22, maxNativeZoom: 19, opacity: .6}).addTo(map);
+const groups = {rgb: L.layerGroup(), ndvi: L.layerGroup(), ndre: L.layerGroup()};
+const range = {ndvi: ['0', '1'], ndre: ['0', '0.6']};
+const all = L.latLngBounds([]), seen = new Set();
+let active = 'rgb', follow = true;
+groups.rgb.addTo(map);
+['pointerdown', 'wheel'].forEach(e => map.getContainer().addEventListener(e, () => follow = false));
+
+function add(t) {
+  if (seen.has(t.id)) return;
+  seen.add(t.id);
+  for (const k in groups) groups[k].addLayer(L.imageOverlay(t.urls[k], t.bounds));
+  all.extend(L.latLngBounds(t.bounds));
+  if (follow) map.fitBounds(all, {animate: false});
+  $('info').textContent = seen.size + ' tiles';
+}
+
+document.querySelectorAll('#bar button').forEach(b => b.onclick = () => {
+  map.removeLayer(groups[active]); active = b.dataset.l; groups[active].addTo(map);
+  document.querySelectorAll('#bar button').forEach(x => x.classList.toggle('on', x === b));
+  const r = range[active];
+  $('leg').style.display = r ? 'block' : 'none';
+  if (r) { $('lo').textContent = r[0]; $('hi').textContent = r[1]; }
+});
+
+const es = new EventSource('/api/stream');
+es.onmessage = e => add(JSON.parse(e.data));
+es.onopen = () => fetch('/api/tiles').then(r => r.json()).then(a => a.forEach(add));
+</script>
