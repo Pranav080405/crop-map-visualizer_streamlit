@@ -10,8 +10,10 @@
  #bar button.on{color:#fff;background:#222;border-top-color:#4caf50}
  .box{position:absolute;z-index:1000;background:#fffd;padding:4px 8px;border-radius:4px}
  #info{top:8px;right:8px} #leg{bottom:66px;left:8px;display:none}
- #grad{height:10px;width:160px;background:linear-gradient(90deg,#f00,#ff0,#0f0)}
+ #grad{height:10px;width:160px;background:linear-gradient(90deg,#000,#fff)}
  #lab{display:flex;justify-content:space-between;font-size:12px}
+ .leaflet-image-layer{animation:fade .8s}
+ @keyframes fade{from{opacity:0}}
 </style>
 <div id="map"></div>
 <div id="info" class="box">waiting for data…</div>
@@ -22,24 +24,38 @@
 const $ = id => document.getElementById(id);
 const map = L.map('map', {maxZoom: 22}).setView([0, 0], 2);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 22, maxNativeZoom: 19, opacity: .6}).addTo(map);
-const groups = {rgb: L.layerGroup(), ndvi: L.layerGroup(), ndre: L.layerGroup()};
+const ov = {rgb: [], ndvi: [], ndre: []};  // overlays per layer, revealed one at a time
 const range = {ndvi: ['0', '1'], ndre: ['0', '0.6']};
 const all = L.latLngBounds([]), seen = new Set();
-let active = 'rgb', follow = true;
-groups.rgb.addTo(map);
+let active = 'rgb', follow = true, shown = 0, busy = false, timer;
 ['pointerdown', 'wheel'].forEach(e => map.getContainer().addEventListener(e, () => follow = false));
+
+function pump() {  // reveal the active layer's overlays one at a time
+  const list = ov[active];
+  if (shown >= list.length) { busy = false; return; }
+  busy = true;
+  list[shown++].addTo(map);
+  timer = setTimeout(pump, Math.min(250, 3000 / list.length));
+}
+
+function show(k) {  // switching tabs rebuilds that mosaic tile by tile
+  clearTimeout(timer);
+  ov[active].slice(0, shown).forEach(o => o.remove());
+  active = k; shown = 0; pump();
+}
 
 function add(t) {
   if (seen.has(t.id)) return;
   seen.add(t.id);
-  for (const k in groups) groups[k].addLayer(L.imageOverlay(t.urls[k], t.bounds));
+  for (const k in ov) ov[k].push(L.imageOverlay(t.urls[k], t.bounds));
+  if (!busy) pump();
   all.extend(L.latLngBounds(t.bounds));
   if (follow) map.fitBounds(all, {animate: false});
   $('info').textContent = seen.size + ' tiles';
 }
 
 document.querySelectorAll('#bar button').forEach(b => b.onclick = () => {
-  map.removeLayer(groups[active]); active = b.dataset.l; groups[active].addTo(map);
+  show(b.dataset.l);
   document.querySelectorAll('#bar button').forEach(x => x.classList.toggle('on', x === b));
   const r = range[active];
   $('leg').style.display = r ? 'block' : 'none';

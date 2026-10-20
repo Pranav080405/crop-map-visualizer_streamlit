@@ -6,8 +6,8 @@ import json, queue, sys, threading, time
 import cv2, numpy as np, requests
 
 X = np.linspace(0, 1, 256)
-# BGR lookup table: red -> yellow -> green
-LUT = (np.stack([0 * X, np.clip(2 * X, 0, 1), np.clip(2 - 2 * X, 0, 1)], 1) * 255).astype(np.uint8).reshape(256, 1, 3)
+# greyscale lookup table: black (low index) -> white (high index)
+LUT = np.repeat((X * 255).astype(np.uint8)[:, None, None], 3, axis=2)
 
 
 def nd(a, b):
