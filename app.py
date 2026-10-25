@@ -26,15 +26,13 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-DATA_DIR = Path("data")
-LOG_FILE = DATA_DIR / "tiles.jsonl"
+TILES_FILE = Path("static/tiles.json")
+if not TILES_FILE.exists():
+    st.error("static/tiles.json not found! Run python generate_layers.py first.")
+    st.stop()
 
-tiles = []
-if LOG_FILE.exists():
-    with open(LOG_FILE, "r") as f:
-        tiles = [json.loads(line) for line in f if line.strip()]
-
-tiles_json = json.dumps(tiles)
+with open(TILES_FILE, "r") as f:
+    mosaic_data = f.read()
 
 html_content = f"""
 <!DOCTYPE html>
@@ -111,7 +109,7 @@ html_content = f"""
       color: #111;
       z-index: 1000;
       box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-      display: none;
+      display: block;
     }}
     .bar {{
       width: 140px;
@@ -141,44 +139,70 @@ html_content = f"""
   </div>
 
   <script>
-    const tilesData = {tiles_json};
+    const data = {mosaic_data};
+    const totalTiles = data.tiles.length;
     let currentMode = 'ndre';
-    const tileLayers = [];
+    let currentTileIdx = 0;
+
+    // Three Layer Groups running in parallel
+    const layerGroups = {{
+      'rgb': L.layerGroup(),
+      'ndvi': L.layerGroup(),
+      'ndre': L.layerGroup()
+    }};
 
     const map = L.map('map', {{
-      attributionControl: true,
-      zoomControl: true
-    }}).setView([0, 0], 2);
-
-    document.getElementById('counter').innerText = `${{tilesData.length}} tiles`;
-
-    const boundsList = [];
-    tilesData.forEach(tile => {{
-      const b = tile.bounds;
-      boundsList.push(b[0], b[1]);
-
-      const overlay = L.imageOverlay(tile.urls[currentMode], b, {{
-        opacity: 0.95,
-        interactive: false
-      }}).addTo(map);
-
-      tileLayers.push({{ overlay, urls: tile.urls }});
+      crs: L.CRS.Simple,
+      minZoom: -3,
+      maxZoom: 3,
+      zoomControl: true,
+      attributionControl: false
     }});
 
-    if (boundsList.length > 0) {{
-      map.fitBounds(boundsList);
+    // Center the map on image bounds
+    const fullBounds = [[0, 0], [data.height, data.width]];
+    map.fitBounds(fullBounds);
+
+    // Add active layer group to map
+    layerGroups[currentMode].addTo(map);
+
+    // Incremental Stream Loop (1 tile every 400ms)
+    function streamNextTile() {{
+      if (currentTileIdx >= totalTiles) return;
+
+      const tile = data.tiles[currentTileIdx];
+      // Invert Y coordinate so [0,0] is top-left
+      const b = [
+        [data.height - tile.bounds[1][0], tile.bounds[0][1]],
+        [data.height - tile.bounds[0][0], tile.bounds[1][1]]
+      ];
+
+      // Add tile to ALL 3 layer groups at the exact same time
+      L.imageOverlay(tile.urls['rgb'], b, {{ opacity: 0.95 }}).addTo(layerGroups['rgb']);
+      L.imageOverlay(tile.urls['ndvi'], b, {{ opacity: 0.95 }}).addTo(layerGroups['ndvi']);
+      L.imageOverlay(tile.urls['ndre'], b, {{ opacity: 0.95 }}).addTo(layerGroups['ndre']);
+
+      currentTileIdx++;
+      document.getElementById('counter').innerText = `${{currentTileIdx}} / ${{totalTiles}} tiles`;
+
+      setTimeout(streamNextTile, 400);
     }}
 
+    // Tab Switching
     function switchLayer(mode) {{
+      if (mode === currentMode) return;
+
+      // Swap displayed layer group
+      map.removeLayer(layerGroups[currentMode]);
+      layerGroups[mode].addTo(map);
       currentMode = mode;
+
+      // Update Tab Styles
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       const activeIdx = mode === 'rgb' ? 0 : (mode === 'ndvi' ? 1 : 2);
       document.querySelectorAll('.tab')[activeIdx].classList.add('active');
 
-      tileLayers.forEach(t => {{
-        t.overlay.setUrl(t.urls[mode]);
-      }});
-
+      // Update Legend
       const legend = document.getElementById('legend');
       const legMax = document.getElementById('leg-max');
       if (mode === 'rgb') {{
@@ -189,7 +213,8 @@ html_content = f"""
       }}
     }}
 
-    switchLayer('ndre');
+    // Start streaming
+    streamNextTile();
   </script>
 </body>
 </html>

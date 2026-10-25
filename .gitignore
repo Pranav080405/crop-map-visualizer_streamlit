@@ -1,13 +1,4 @@
-# Runtime flight data
-data/
-*.webp
-tiles.jsonl
-
-# Python cache & environments
-__pycache__/
-*.py[cod]
-*$py.class
 .venv/
-env/
-venv/
+__pycache__/
+*.pyc
 .DS_Store
