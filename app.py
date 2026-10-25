@@ -1,3 +1,4 @@
+# app.py
 import base64
 from pathlib import Path
 import streamlit as st
@@ -32,7 +33,7 @@ if not TILES_FILE.exists():
     st.error("Missing static/tiles.json! Please verify the file is committed to your repository.")
     st.stop()
 
-# Encode tiles.json as base64 to safely embed into HTML without any syntax or quote conflicts
+# Read and encode tiles.json safely
 tiles_b64 = base64.b64encode(TILES_FILE.read_bytes()).decode("utf-8")
 
 html_content = f"""
@@ -190,14 +191,36 @@ html_content = f"""
     }}
 
     try {{
-      // Decode base64 payload directly in memory
-      const rawData = atob("{tiles_b64}");
-      const data = JSON.parse(rawData);
+      // Safe base64 decoding (Unicode-safe)
+      const binaryString = atob("{tiles_b64}");
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {{
+        bytes[i] = binaryString.charCodeAt(i);
+      }}
+      const decodedJson = new TextDecoder('utf-8').decode(bytes);
+      const parsed = JSON.parse(decodedJson);
 
-      const [imgH, imgW] = data.dimensions;
-      const tiles = data.tiles;
+      // Support both { tiles: [...] } and direct array [...]
+      const tiles = Array.isArray(parsed) ? parsed : (parsed.tiles || []);
+      
+      if (!tiles.length) {{
+        counterEl.innerText = "No tiles found in JSON";
+        throw new Error("No tiles in parsed JSON");
+      }}
 
-      map.fitBounds([[0, 0], [imgH, imgW]]);
+      // Calculate bounding box across all tiles
+      let minY = Infinity, minX = Infinity, maxY = -Infinity, maxX = -Infinity;
+      tiles.forEach(t => {{
+        const b = t.bounds;
+        if (b) {{
+          minY = Math.min(minY, b[0][0], b[1][0]);
+          minX = Math.min(minX, b[0][1], b[1][1]);
+          maxY = Math.max(maxY, b[0][0], b[1][0]);
+          maxX = Math.max(maxX, b[0][1], b[1][1]);
+        }}
+      }});
+
+      map.fitBounds([[minY, minX], [maxY, maxX]]);
 
       let tileIndex = 0;
       function streamNextTile() {{
@@ -207,9 +230,15 @@ html_content = f"""
         }}
 
         const t = tiles[tileIndex];
-        L.imageOverlay(t.rgb, t.bounds, {{ opacity: 0.95 }}).addTo(layerGroups['rgb']);
-        L.imageOverlay(t.ndvi, t.bounds, {{ opacity: 0.95 }}).addTo(layerGroups['ndvi']);
-        L.imageOverlay(t.ndre, t.bounds, {{ opacity: 0.95 }}).addTo(layerGroups['ndre']);
+        
+        // Handle both formats: t.rgb or t.urls.rgb
+        const rgbImg = t.rgb || (t.urls && t.urls.rgb);
+        const ndviImg = t.ndvi || (t.urls && t.urls.ndvi);
+        const ndreImg = t.ndre || (t.urls && t.urls.ndre);
+
+        if (rgbImg) L.imageOverlay(rgbImg, t.bounds, {{ opacity: 0.95 }}).addTo(layerGroups['rgb']);
+        if (ndviImg) L.imageOverlay(ndviImg, t.bounds, {{ opacity: 0.95 }}).addTo(layerGroups['ndvi']);
+        if (ndreImg) L.imageOverlay(ndreImg, t.bounds, {{ opacity: 0.95 }}).addTo(layerGroups['ndre']);
 
         tileIndex++;
         counterEl.innerText = `${{tileIndex}} / ${{tiles.length}} tiles`;
