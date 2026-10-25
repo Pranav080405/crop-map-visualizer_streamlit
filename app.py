@@ -1,4 +1,4 @@
-# app.py
+import base64
 from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as components
@@ -29,11 +29,13 @@ st.markdown(
 
 TILES_FILE = Path("static/tiles.json")
 if not TILES_FILE.exists():
-    st.error("Missing static/tiles.json! Please verify it is pushed to the repository.")
+    st.error("Missing static/tiles.json! Please verify the file is committed to your repository.")
     st.stop()
 
-# Serve HTML that fetches the static JSON directly from Streamlit's static file route
-html_content = """
+# Encode tiles.json as base64 to safely embed into HTML without any syntax or quote conflicts
+tiles_b64 = base64.b64encode(TILES_FILE.read_bytes()).decode("utf-8")
+
+html_content = f"""
 <!DOCTYPE html>
 <html>
 <head>
@@ -41,8 +43,8 @@ html_content = """
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
-    * { box-sizing: border-box; }
-    html, body {
+    * {{ box-sizing: border-box; }}
+    html, body {{
       margin: 0;
       padding: 0;
       width: 100%;
@@ -50,20 +52,20 @@ html_content = """
       overflow: hidden;
       background: #8b8b88;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-    #app-container {
+    }}
+    #app-container {{
       display: flex;
       flex-direction: column;
       width: 100%;
       height: 100vh;
       position: relative;
-    }
-    #map {
+    }}
+    #map {{
       flex: 1;
       width: 100%;
       background: #8b8b88;
-    }
-    #tab-bar {
+    }}
+    #tab-bar {{
       height: 54px;
       min-height: 54px;
       width: 100%;
@@ -71,8 +73,8 @@ html_content = """
       display: flex;
       z-index: 2000;
       box-shadow: 0 -2px 10px rgba(0,0,0,0.6);
-    }
-    .tab {
+    }}
+    .tab {{
       flex: 1;
       color: #888888;
       font-size: 15px;
@@ -85,14 +87,14 @@ html_content = """
       user-select: none;
       border-top: 3px solid transparent;
       transition: background 0.2s, color 0.2s, border 0.2s;
-    }
-    .tab:hover { color: #ffffff; background: #191919; }
-    .tab.active {
+    }}
+    .tab:hover {{ color: #ffffff; background: #191919; }}
+    .tab.active {{
       color: #ffffff;
       background: #1e1e1e;
       border-top: 3px solid #4caf50;
-    }
-    #counter {
+    }}
+    #counter {{
       position: absolute;
       top: 14px;
       right: 14px;
@@ -104,8 +106,8 @@ html_content = """
       color: #222;
       z-index: 1000;
       box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-    }
-    #legend {
+    }}
+    #legend {{
       position: absolute;
       bottom: 66px;
       left: 14px;
@@ -117,37 +119,23 @@ html_content = """
       z-index: 1000;
       box-shadow: 0 1px 4px rgba(0,0,0,0.3);
       display: block;
-    }
-    .bar {
+    }}
+    .bar {{
       width: 140px;
       height: 10px;
       background: linear-gradient(to right, #000000, #ffffff);
       margin-bottom: 4px;
       border: 1px solid #777;
-    }
-    .labels {
+    }}
+    .labels {{
       display: flex;
       justify-content: space-between;
       font-weight: bold;
-    }
-    #loading-overlay {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(0,0,0,0.75);
-      color: #fff;
-      padding: 12px 20px;
-      border-radius: 6px;
-      font-size: 14px;
-      z-index: 3000;
-      display: none;
-    }
+    }}
   </style>
 </head>
 <body>
   <div id="app-container">
-    <div id="loading-overlay">Loading tiles...</div>
     <div id="counter">0 tiles</div>
     <div id="map"></div>
     <div id="legend">
@@ -163,26 +151,25 @@ html_content = """
 
   <script>
     const counterEl = document.getElementById('counter');
-    const loadingEl = document.getElementById('loading-overlay');
-    
     let currentMode = 'ndre';
-    const layerGroups = {
+
+    const layerGroups = {{
       'rgb': L.layerGroup(),
       'ndvi': L.layerGroup(),
       'ndre': L.layerGroup()
-    };
+    }};
 
-    const map = L.map('map', {
+    const map = L.map('map', {{
       crs: L.CRS.Simple,
       minZoom: -3,
       maxZoom: 3,
       zoomControl: true,
       attributionControl: false
-    });
+    }});
 
     layerGroups[currentMode].addTo(map);
 
-    function switchLayer(mode) {
+    function switchLayer(mode) {{
       if (mode === currentMode) return;
       map.removeLayer(layerGroups[currentMode]);
       map.addLayer(layerGroups[mode]);
@@ -194,36 +181,18 @@ html_content = """
 
       const legend = document.getElementById('legend');
       const legMax = document.getElementById('leg-max');
-      if (mode === 'rgb') {
+      if (mode === 'rgb') {{
         legend.style.display = 'none';
-      } else {
+      }} else {{
         legend.style.display = 'block';
         legMax.innerText = mode === 'ndvi' ? '1.0' : '0.6';
-      }
-    }
+      }}
+    }}
 
-    async function init() {
-      loadingEl.style.display = 'block';
-      let data = null;
-
-      // Try reading directly from the static route
-      const candidates = ['./app/static/tiles.json', './static/tiles.json', '/app/static/tiles.json', '/static/tiles.json'];
-      for (const url of candidates) {
-        try {
-          const res = await fetch(url);
-          if (res.ok) {
-            data = await res.json();
-            break;
-          }
-        } catch (e) {}
-      }
-
-      loadingEl.style.display = 'none';
-
-      if (!data || !data.tiles) {
-        counterEl.innerText = "Error loading tiles";
-        return;
-      }
+    try {{
+      // Decode base64 payload directly in memory
+      const rawData = atob("{tiles_b64}");
+      const data = JSON.parse(rawData);
 
       const [imgH, imgW] = data.dimensions;
       const tiles = data.tiles;
@@ -231,27 +200,28 @@ html_content = """
       map.fitBounds([[0, 0], [imgH, imgW]]);
 
       let tileIndex = 0;
-      function streamNextTile() {
-        if (tileIndex >= tiles.length) {
-          counterEl.innerText = `${tiles.length} tiles (Complete)`;
+      function streamNextTile() {{
+        if (tileIndex >= tiles.length) {{
+          counterEl.innerText = `${{tiles.length}} tiles (Complete)`;
           return;
-        }
+        }}
 
         const t = tiles[tileIndex];
-        L.imageOverlay(t.rgb, t.bounds, { opacity: 0.95 }).addTo(layerGroups['rgb']);
-        L.imageOverlay(t.ndvi, t.bounds, { opacity: 0.95 }).addTo(layerGroups['ndvi']);
-        L.imageOverlay(t.ndre, t.bounds, { opacity: 0.95 }).addTo(layerGroups['ndre']);
+        L.imageOverlay(t.rgb, t.bounds, {{ opacity: 0.95 }}).addTo(layerGroups['rgb']);
+        L.imageOverlay(t.ndvi, t.bounds, {{ opacity: 0.95 }}).addTo(layerGroups['ndvi']);
+        L.imageOverlay(t.ndre, t.bounds, {{ opacity: 0.95 }}).addTo(layerGroups['ndre']);
 
         tileIndex++;
-        counterEl.innerText = `${tileIndex} / ${tiles.length} tiles`;
+        counterEl.innerText = `${{tileIndex}} / ${{tiles.length}} tiles`;
 
         setTimeout(streamNextTile, 150);
-      }
+      }}
 
       streamNextTile();
-    }
-
-    init();
+    }} catch (err) {{
+      console.error(err);
+      counterEl.innerText = "Error parsing tiles: " + err.message;
+    }}
   </script>
 </body>
 </html>
