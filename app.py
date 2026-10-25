@@ -1,3 +1,4 @@
+# app.py
 import base64
 from pathlib import Path
 import streamlit as st
@@ -20,7 +21,9 @@ st.markdown(
       }
       iframe {
         border: none;
-        width: 100% !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        display: block;
       }
     </style>
     """,
@@ -32,10 +35,8 @@ if not TILES_FILE.exists():
     st.error("Missing static/tiles.json! Please verify the file is committed to your repository.")
     st.stop()
 
-# Encode tiles.json cleanly into base64
 tiles_b64 = base64.b64encode(TILES_FILE.read_bytes()).decode("utf-8")
 
-# Raw string template — no f-string syntax issues with { } or JS objects
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -50,29 +51,29 @@ HTML_TEMPLATE = """
       padding: 0;
       width: 100%;
       height: 100%;
-      overflow: hidden;
+      overflow: hidden !important;
       background: #8b8b88;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
-    #app-container {
-      display: flex;
-      flex-direction: column;
-      width: 100%;
-      height: 100vh;
-      position: relative;
-    }
     #map {
-      flex: 1;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 54px;
       width: 100%;
       background: #8b8b88;
     }
+    /* Fixed Docked Bottom Navigation Bar */
     #tab-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
       height: 54px;
-      min-height: 54px;
-      width: 100%;
       background: #111111;
       display: flex;
-      z-index: 2000;
+      z-index: 9999;
       box-shadow: 0 -2px 10px rgba(0,0,0,0.6);
     }
     .tab {
@@ -110,7 +111,7 @@ HTML_TEMPLATE = """
     }
     #legend {
       position: absolute;
-      bottom: 66px;
+      bottom: 68px;
       left: 14px;
       background: rgba(255, 255, 255, 0.95);
       padding: 8px 12px;
@@ -136,18 +137,16 @@ HTML_TEMPLATE = """
   </style>
 </head>
 <body>
-  <div id="app-container">
-    <div id="counter">0 tiles</div>
-    <div id="map"></div>
-    <div id="legend">
-      <div class="bar"></div>
-      <div class="labels"><span id="leg-min">0</span><span id="leg-max">0.6</span></div>
-    </div>
-    <div id="tab-bar">
-      <div class="tab" onclick="switchLayer('rgb')">RGB</div>
-      <div class="tab" onclick="switchLayer('ndvi')">NDVI</div>
-      <div class="tab active" onclick="switchLayer('ndre')">NDRE</div>
-    </div>
+  <div id="counter">0 tiles</div>
+  <div id="map"></div>
+  <div id="legend">
+    <div class="bar"></div>
+    <div class="labels"><span id="leg-min">0</span><span id="leg-max">0.6</span></div>
+  </div>
+  <div id="tab-bar">
+    <div class="tab" onclick="switchLayer('rgb')">RGB</div>
+    <div class="tab" onclick="switchLayer('ndvi')">NDVI</div>
+    <div class="tab active" onclick="switchLayer('ndre')">NDRE</div>
   </div>
 
   <script>
@@ -160,10 +159,15 @@ HTML_TEMPLATE = """
       'ndre': L.layerGroup()
     };
 
+    // CRS with [0,0] at top-left matching image pixel arrays
+    const crsTopLeft = L.Util.extend({}, L.CRS.Simple, {
+      transformation: new L.Transformation(1, 0, 1, 0)
+    });
+
     const map = L.map('map', {
-      crs: L.CRS.Simple,
-      minZoom: -3,
-      maxZoom: 3,
+      crs: crsTopLeft,
+      minZoom: -4,
+      maxZoom: 4,
       zoomControl: true,
       attributionControl: false
     });
@@ -200,24 +204,15 @@ HTML_TEMPLATE = """
       const parsed = JSON.parse(decodedJson);
 
       const tiles = Array.isArray(parsed) ? parsed : (parsed.tiles || []);
-      
+      const [imgH, imgW] = parsed.dimensions || [1000, 1000];
+
       if (!tiles.length) {
         counterEl.innerText = "No tiles found in JSON";
         throw new Error("No tiles in parsed JSON");
       }
 
-      let minY = Infinity, minX = Infinity, maxY = -Infinity, maxX = -Infinity;
-      tiles.forEach(t => {
-        const b = t.bounds;
-        if (b) {
-          minY = Math.min(minY, b[0][0], b[1][0]);
-          minX = Math.min(minX, b[0][1], b[1][1]);
-          maxY = Math.max(maxY, b[0][0], b[1][0]);
-          maxX = Math.max(maxX, b[0][1], b[1][1]);
-        }
-      });
-
-      map.fitBounds([[minY, minX], [maxY, maxX]]);
+      // Exact pixel bounds
+      map.fitBounds([[0, 0], [imgH, imgW]]);
 
       let tileIndex = 0;
       function streamNextTile() {
@@ -231,9 +226,9 @@ HTML_TEMPLATE = """
         const ndviImg = t.ndvi || (t.urls && t.urls.ndvi);
         const ndreImg = t.ndre || (t.urls && t.urls.ndre);
 
-        if (rgbImg) L.imageOverlay(rgbImg, t.bounds, { opacity: 0.95 }).addTo(layerGroups['rgb']);
-        if (ndviImg) L.imageOverlay(ndviImg, t.bounds, { opacity: 0.95 }).addTo(layerGroups['ndvi']);
-        if (ndreImg) L.imageOverlay(ndreImg, t.bounds, { opacity: 0.95 }).addTo(layerGroups['ndre']);
+        if (rgbImg) L.imageOverlay(rgbImg, t.bounds, { opacity: 0.98, interactive: false }).addTo(layerGroups['rgb']);
+        if (ndviImg) L.imageOverlay(ndviImg, t.bounds, { opacity: 0.98, interactive: false }).addTo(layerGroups['ndvi']);
+        if (ndreImg) L.imageOverlay(ndreImg, t.bounds, { opacity: 0.98, interactive: false }).addTo(layerGroups['ndre']);
 
         tileIndex++;
         counterEl.innerText = tileIndex + " / " + tiles.length + " tiles";
@@ -251,7 +246,5 @@ HTML_TEMPLATE = """
 </html>
 """
 
-# Safe variable substitution without f-string interference
 html_content = HTML_TEMPLATE.replace("__TILES_B64__", tiles_b64)
-
-components.html(html_content, height=920, scrolling=False)
+components.html(html_content, height=850, scrolling=False)
