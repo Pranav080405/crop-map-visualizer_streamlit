@@ -1,0 +1,5 @@
+mkdir -p .streamlit
+cat << 'EOF' > .streamlit/config.toml
+[server]
+enableStaticServing = true
+EOF
